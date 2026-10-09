@@ -1,0 +1,98 @@
+{
+  "signatures": [
+    {
+      "keyid": "507b54e2b4b3606dd011a9455f9fbc043b8cb71d9601e9b8d449aafab48bf10d",
+      "sig": "d430dbc6f72df872314a95cf3d4d797c253bc7089b3b550bfba85d1eaa69326981e4a03bf60112f8485319e2e4cf424d47d9fef5d6f1366e8072628b0eae5000"
+    }
+  ],
+  "signed": {
+    "_type": "targets",
+    "spec_version": "1.0.0",
+    "version": 33,
+    "expires": "2026-12-01T08:26:39Z",
+    "targets": {
+      "cluster_1.0.0": {
+        "hashes": {
+          "sha256": "8947215cea5a96a74ffbe674c099c3a20acc836a1f5b0d6dc7d66449f78e1b4c",
+          "sha512": "ed97440b8c357f4fd0f9380817d07335cf190ce6571067fa5a2980e2ffadc4aff0889a8f6b72f2c34292ed0aca5403ce12c532687ff3a2538a78be036feba0bd"
+        },
+        "length": 331233792
+      },
+      "ivi_2.0.0": {
+        "hashes": {
+          "sha256": "5b357d7f26afcee2ea354cdd8f813cd86f0291fa5e75f54db9f78c583235f6f7",
+          "sha512": "c026f0cd88496c7d3989fb78d7af0a4b01690d795da8c8609568547f7f2824e1db98e45ac2e356219378e96ed1aaf421299a1d0c1f4c91373b13383374febcf1"
+        },
+        "length": 501955584
+      }
+    },
+    "delegations": {
+      "keys": {
+        "6e4b73367e6d36182a864ad6b7513bd06e8680e1bfc98766f782df1ac28b483a": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyid_hash_algorithms": [
+            "sha256"
+          ],
+          "keyval": {
+            "public": "DdTIYRICyWzd9iVmN4f6vS8KqkWzqx/+rYZNm7KfEfw="
+          }
+        },
+        "3bf905fc236d890fa4b43ad1c9692c4fc22b628586d47b087aec4a3092b10e56": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyid_hash_algorithms": [
+            "sha256"
+          ],
+          "keyval": {
+            "public": "0dd4c8611202c96cddf625663787fabd2f0aaa45b3ab1ffead864d9bb29f11fc"
+          }
+        },
+        "3e791b7788cc78d306f6a08184762de1aa84f14e108912326cbc48bc64ad789f": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyid_hash_algorithms": [
+            "sha256"
+          ],
+          "keyval": {
+            "public": "a7bdc274c2572fe6172fdb4e8b6f0131b5fe82bafd2f62c0de1787f58f213196"
+          }
+        },
+        "f446fb01473aa70d7fbe1a954da9fe412b73bd792f8ce478eb9ec3acbe7f529c": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyid_hash_algorithms": [
+            "sha256"
+          ],
+          "keyval": {
+            "public": "46c9ebaabb47c7562f9d905386bbb756f4a6e0dc6ffb82e40bc19fa77e4e76d9"
+          }
+        }
+      },
+      "roles": [
+        {
+          "name": "ivi",
+          "keyids": [
+            "f446fb01473aa70d7fbe1a954da9fe412b73bd792f8ce478eb9ec3acbe7f529c"
+          ],
+          "paths": [
+            "ivi/*"
+          ],
+          "terminating": false,
+          "threshold": 1
+        },
+        {
+          "name": "cluster",
+          "keyids": [
+            "3e791b7788cc78d306f6a08184762de1aa84f14e108912326cbc48bc64ad789f"
+          ],
+          "paths": [
+            "cluster/*"
+          ],
+          "terminating": false,
+          "threshold": 1
+        }
+      ]
+    }
+  }
+}

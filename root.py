@@ -13,8 +13,13 @@ import json
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from pathlib import Path
 
-from zoneinfo import ZoneInfo  # Python 3.9+
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # backports 패키지 필요
+    
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, ed25519
 from cryptography.hazmat.backends import default_backend
@@ -24,9 +29,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # 공개키(PEM)
 ROOT_PUBS = ["root1_pub.pem", "root2_pub.pem", "root3_pub.pem"]   # RSA 공개키 3개
-SNAPSHOT_PUB = "snapshot_pub.pem"                                  # Ed25519 공개키
-TARGETS_PUB  = "target_public.pem"                                 # Ed25519 공개키
-TIMESTAMP_PUB= "timestamp_public.pem"                              # Ed25519 공개키
+SNAPSHOT_PUB = Path("./root_keys/snapshot_pub.pem")                                  # Ed25519 공개키
+TARGETS_PUB  = Path("./root_keys/targets_pub.pem")                                 # Ed25519 공개키
+TIMESTAMP_PUB= Path("./root_keys/timestamp_pub.pem")                              # Ed25519 공개키
 
 # 서명에 사용할 RSA 개인키(PEM) 2개 — threshold=2 충족
 SIGNING_PRIVS = ["root1.pem", "root2.pem"]
@@ -122,7 +127,7 @@ def rsa_pss_sha256_sign(privkey, data: bytes) -> bytes:
 
 def main():
     # === RSA(root) 공개키 로딩 ===
-    root_keyobjs = [make_rsa_keyentry(read_text(p)) for p in ROOT_PUBS]
+    root_keyobjs = [make_rsa_keyentry(read_text(Path(f"./root_keys/{p}"))) for p in ROOT_PUBS]
 
     # === Ed25519(snapshot/targets/timestamp) 공개키 로딩 + RAW hex 변환 ===
     snapshot_hex = ed25519_pem_to_raw_hex(read_text(SNAPSHOT_PUB))
@@ -176,7 +181,7 @@ def main():
     # === threshold(=2)개 서명 생성 (RSA-PSS-SHA256) ===
     signatures = []
     for priv_path in SIGNING_PRIVS:
-        priv = read_private_key(priv_path, password=None)
+        priv = read_private_key(Path(f"./root_keys/{priv_path}"), password=None)
         # 대응 공개키 PEM 추출 → RSA keyobj → keyid 계산 (roles에 선언된 것과 동일해야 함)
         pub_pem = priv.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
@@ -192,21 +197,21 @@ def main():
     root_doc = {"signatures": signatures, "signed": root_signed}
 
     dir_ver_path = f"./Director/meta/{VERSION}.root.json"
-    dir_cur_path = "./Director/root.json"
+    dir_cur_path = "./Director/meta/root.json"
     img_ver_path = f"./Image/meta/{VERSION}.root.json"
-    img_cur_path = "./Image/root.json"
+    img_cur_path = "./OTA_Director_Server/Image_Repo/meta/root.json"
 
-    with open(dir_ver_path, "w", encoding="utf-8") as f:
-        json.dump(root_doc, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    # with open(dir_ver_path, "w", encoding="utf-8") as f:
+    #     json.dump(root_doc, f, indent=2, ensure_ascii=False)
+    #     f.write("\n")
     with open(dir_cur_path, "w", encoding="utf-8") as f:
         json.dump(root_doc, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
-    with open(img_ver_path, "w", encoding="utf-8") as f:
-        json.dump(root_doc, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    with open(img_cur_path_path, "w", encoding="utf-8") as f:
+    # with open(img_ver_path, "w", encoding="utf-8") as f:
+    #     json.dump(root_doc, f, indent=2, ensure_ascii=False)
+    #     f.write("\n")
+    with open(img_cur_path, "w", encoding="utf-8") as f:
         json.dump(root_doc, f, indent=2, ensure_ascii=False)
         f.write("\n")
 

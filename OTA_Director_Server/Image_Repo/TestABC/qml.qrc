@@ -1,9 +1,0 @@
-<!-- "v0.0.1" -->
-<RCC>
-    <qresource prefix="/">
-        <file>main.qml</file>
-        <file>images/lambo_back.jpg</file>
-        <file>images/hyundai_front.jpg</file>
-        <file>images/aston_logo.png</file>
-    </qresource>
-</RCC>

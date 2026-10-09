@@ -1,7 +1,11 @@
 import os, re, json, binascii, hashlib
 from typing import Any, Dict, Optional, Tuple
 from datetime import datetime, timedelta, timezone
-from backports.zoneinfo import ZoneInfo
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # backports 패키지 필요
+from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -9,14 +13,18 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # ===== 설정(고정) =====
-SPEC_VERSION            = "1.0.0"
-META_DIR                = "../meta"
-ROOT_JSON_PATH          = "../meta/1.root.json"
-SNAPSHOT_JSON_PATH      = "./snapshot.json"
-DEFAULT_EXPIRES_HOURS   = 24
+from config import (
+    DIRECTOR_METADATA_DIR,
+    DIRECTOR_KEYS_DIR,
+    TIMESTAMP_EXPIRES_DAYS,
+)
 
-TIMESTAMP_PRIV_PEM      = "./keys/timestamp_priv.pem"
-TIMESTAMP_PUB_PEM       = "./keys/timestamp_pub.pem"
+SPEC_VERSION            = "1.0.0"
+ROOT_JSON_PATH          = DIRECTOR_METADATA_DIR / "root.json"
+SNAPSHOT_JSON_PATH      = DIRECTOR_METADATA_DIR / "snapshot.json"
+
+TIMESTAMP_PRIV_PEM      = DIRECTOR_KEYS_DIR / "timestamp.pem"
+TIMESTAMP_PUB_PEM       = DIRECTOR_KEYS_DIR / "timestamp_pub.pem"
 
 # ===== 유틸 =====
 def canonical_json_bytes(obj: Any) -> bytes:
@@ -59,7 +67,7 @@ def resolve_timestamp_keyid_from_root_by_pubhex(root_path: str, my_pub_hex: str)
         if keyobj.get("keytype") == "ed25519" and keyobj.get("keyval", {}).get("public") == my_pub_hex:
             return kid
 
-    #raise RuntimeError("[!] root.json의 'timestamp' role에 공개키가 등록되어 있지 않습니다.")
+    raise RuntimeError("[!] root.json의 'timestamp' role에 공개키가 등록되어 있지 않습니다.")
 
 def read_current_timestamp_version() -> int:
     try:
@@ -89,6 +97,11 @@ def build_snapshot_meta_entry(snapshot_path: Optional[str]) -> Dict[str, Any]:
         entry["snapshot.json"] = {"version": 1}
     return entry
 
+def write_timestamp_json(doc: Dict[str, Any]) -> Path:
+    out = DIRECTOR_METADATA_DIR / "timestamp.json"
+    out.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
 # ===== 메인 =====
 def generate_timestamp() -> None:
     # 1) 최신 root & 공개키 hex → keyid 해석
@@ -99,7 +112,7 @@ def generate_timestamp() -> None:
     new_ver = 1 if prev_ver <= 0 else prev_ver + 1
 
     # 2) signed(timestamp) 구성 (spec의 version 필드는 유지)
-    expires = make_expires_iso8601_kst_plus_hours(DEFAULT_EXPIRES_HOURS)
+    expires = make_expires_iso8601_kst_plus_hours(TIMESTAMP_EXPIRES_DAYS)
     signed_obj: Dict[str, Any] = {
         "_type": "timestamp",
         "expires": expires,
@@ -113,7 +126,6 @@ def generate_timestamp() -> None:
     sk = load_private_key_pem(TIMESTAMP_PRIV_PEM)
     sig_hex = ed25519_sign_hex(sk, payload)
 
-    # 4) 결과만 반환 (저장 없음)
+    # 4) 파일 저장 후 경로 반환
     result: Dict[str, Any] = {"signatures": [{"keyid": timestamp_kid, "sig": sig_hex}], "signed": signed_obj}
-    with open("./timestamp.json", "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+    return write_timestamp_json(result)

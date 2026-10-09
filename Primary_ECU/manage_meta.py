@@ -1,212 +1,146 @@
-import os
-import json
-import hashlib
-import random
-from datetime import datetime, timedelta
-from manage_key import makeKeys, makeECUKeys, makeSignature, verifySignature
+import os, json
+import base64
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import padding, ed25519, rsa
+from cryptography.exceptions import InvalidSignature
+import binascii
 
-# Read keys
-def loadKeys(keyType, directory='.'):
-    pem_files = [
-        f for f in os.listdir(directory)
-        if f.lower().endswith(".pem") and f.lower().startswith(keyType)
-    ]
-    keys_data = {}
 
-    for pem_file in pem_files:
-        with open(pem_file, "rb") as f:
-            pem_content = f.read()
+def read_root(metadata: str) -> dict:
+    """
+    root.json에서 role 별로 키 정보 추출
+    """
+    raw = metadata
 
-        keyId = hashlib.sha256(pem_content).hexdigest()
+    signed = raw["signed"]
+    keys_section = signed["keys"]
+    roles_section = signed["roles"]
 
-        keys_data[keyId] = {
-            "keytype": "ecdsa-NIST384p",
-            "scheme": "ecdsa-NIST384p",
-            "keyval": {
-                "public": pem_content.decode("utf-8").strip()
-            },
-            "filename": pem_file
+    # 1) keyid → key 정보
+    keys_db: dict[str, dict] = {}
+    for keyid, keyinfo in keys_section.items():
+        keys_db[keyid] = {
+            "keytype": keyinfo.get("keytype"),
+            "scheme":  keyinfo.get("scheme"),
+            "public":  keyinfo["keyval"]["public"],
         }
-    return keys_data
 
-# Make Root metadata
-def generate_root(root_threshold, targets_threshold):
-    # Expires date
-    expires_date = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # Define Roles
-    keys = loadKeys("verify")
-    keyIds = list(keys.keys())
-
-    if root_threshold > len(keyIds) or targets_threshold > len(keyIds):
-        raise ValueError("Threshold cannot be greater than number of keys available")
-    
-    root_keys = random.sample(keyIds, root_threshold)
-    targets_keys = random.sample(keyIds, targets_threshold)
-
-    role_data = {
-        "root": {
-            "keyids": root_keys,
-            "threshold": root_threshold
-        },
-        "targets": {
-            "keyids": targets_keys,
-            "threshold": targets_threshold
-        }
-    }
-    
-    # Make Raw data
-    signed_content = {
-        "_type": "root",
-        "spec_version": "1.0.0",
-        "version": 1,
-        "expires": expires_date,
-        "keys": {k: {kk: vv for kk, vv in v.items() if kk != "filename"} for k, v in keys.items()},
-        "roles": role_data
-    }
-
-    # Make Signatures
-    signatures = []
-    signed_bytes = json.dumps(signed_content, separators=(',', ':'), sort_keys=True).encode("utf-8")
-
-    for keyid in role_data["root"]["keyids"]:
-        verify_filename = keys[keyid]["filename"]
-        sign_filename = verify_filename.replace("verifyKey", "signKey")
-
-        if not os.path.exists(sign_filename):
-            raise FileNotFoundError(f"Signing key {sign_filename} not found for {verify_filename}")
-        
-        sig_b64 = makeSignature(sign_filename, signed_bytes)
-        signatures.append({
-            "keyid": keyid,
-            "sig": sig_b64.decode("utf-8")
-        })
-
-    root_structure = {
-        "signatures": signatures,
-        "signed": signed_content
-    }
-
-    with open("root.json", "w", encoding="utf-8") as f:
-        json.dump(root_structure, f, indent=2)
-
-    print("\n", '='*50, "\nGenerate Root metadata\n", '='*50)
-
-# Make Vehicle Version Manifest
-def generate_vvm():
-    # Basic Info
-    vin = "1HGBH41JXMN109186"
-    expires_date = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Collect Reports
-    reports = []
-    for report in os.listdir("./version_report"):
-        if report.lower().endswith(".json"):
-            with open(os.path.join("version_report", report), "r", encoding="utf-8") as f:
-                reportData = json.load(f)
-            reports.append(reportData)
-
-    rawData = {
-        "vin": vin,
-        "primary_ecu_serial": "primary0",
-        "ecu_version_report": reports
-    }
-
-    # Make Signatures
-    signatures = []
-    signed_bytes = json.dumps(rawData, separators=(',', ':'), sort_keys=True).encode("utf-8")
-
-    makeECUKeys(rawData["primary_ecu_serial"])
-    signed_content = makeSignature(f"signKey_{rawData['primary_ecu_serial']}.pem", signed_bytes)
-
-    with open(f"signKey_{rawData['primary_ecu_serial']}.pem", "rb") as f:
-        pem_content = f.read()
-
-    keyId = hashlib.sha256(pem_content).hexdigest()
-    signatures.append({
-        "keyid": keyId,
-        "sig": signed_content.decode("utf-8")
-    })
-
-    vvm_structure = {
-        "signature": signatures,
-        "signed": rawData
-    }
-
-    with open("vehicle_version_manifest.json", "w", encoding="utf-8") as f:
-        json.dump(vvm_structure, f, indent=2)
-
-    print("\n", '='*50, "\nGenerate Vehicle Version Manifest\n", '='*50)
-
-# Get key informations
-def read_root(metadata, output_dir="keys_out"):
-    # with open(metadata, "r", encoding="utf-8") as f:
-    #     rawData = json.load(f)
-
-    rawData = metadata
-    
-    keys_dict = rawData["signed"]["keys"]
-    os.makedirs(output_dir, exist_ok=True)
-    key_map = {}
-
-    for keyid, keyinfo in keys_dict.items():
-        public_pem = keyinfo["keyval"]["public"]
-        pem_path = os.path.join(output_dir, f"{keyid}.pem")
-
-        with open(pem_path, "w", encoding="utf-8") as pem_file:
-            pem_file.write(public_pem)
-
-        key_map[keyid] = pem_path
-
-    key_for_meta = {}
-    roles = rawData["signed"]["roles"]
-
-    for role_name, role_info in roles.items():
-        key_for_meta[role_name] = {
+    # 2) role → threshold / keyids
+    roles_db: dict[str, dict] = {}
+    for role_name, role_info in roles_section.items():
+        roles_db[role_name] = {
             "threshold": role_info["threshold"],
-            "keyids": role_info["keyids"]
+            "keyids":    list(role_info["keyids"]),
         }
 
-    return key_for_meta
+    keydb = {
+        "keys":  keys_db,
+        "roles": roles_db,
+    }
 
-# Verify metadata(multi-signature verification)
-def verify_multi_signature(metadata, key_info, output_dir="keys_out"):
-    # with open(metadata, "r", encoding="utf-8") as f:
-    #     rawData = json.load(f)
+    return keydb
 
-    rawData = metadata
-    verify_content = json.dumps(rawData["signed"], separators=(',', ':'), sort_keys=True).encode("utf-8")  
-    threshold = key_info[rawData["signed"]["_type"]]["threshold"]
-    verifyCnt = 0
-    
-    for sig_info in rawData["signatures"]:
-        vk_hash = sig_info["keyid"]
-        signature = sig_info["sig"]
+def _load_public_key_from_entry(entry: dict):
+    """
+    keyid 통해 keytype과 공개키 회득
+    """
+    keytype = entry.get("keytype")
+    public  = entry.get("public")
 
-        pem_path = os.path.join(output_dir, f"{vk_hash}.pem")
+    if keytype == "rsa":
+        # root.json 안 RSA 키는 PEM 그대로 들어 있음
+        pem_bytes = public.encode("utf-8")
+        pub = serialization.load_pem_public_key(pem_bytes)
+        return pub, "rsa"
 
-        if not os.path.exists(pem_path):
-            print(f"Key file not found: {pem_path}")
+    if keytype == "ed25519":
+        # ed25519 키는 raw 32바이트를 hex로 저장한 형태
+        pub_bytes = bytes.fromhex(public)
+        pub = ed25519.Ed25519PublicKey.from_public_bytes(pub_bytes)
+        return pub, "ed25519"
+
+    raise ValueError(f"unsupported keytype: {keytype}")
+
+def verify_multi_signature(metadata: dict, keydb: dict) -> None:
+    """
+    메타데이터 검증
+    """
+    raw = metadata
+    signed = raw["signed"]
+    signatures = raw.get("signatures", [])
+
+    role = signed.get("_type")
+    roles_db = keydb.get("roles", {})
+
+    # print(f"Roles in key DB:        {roles_db}")
+    if role not in roles_db:
+        raise ValueError(f"role '{role}' not found in keydb")
+
+    role_cfg = roles_db[role]
+    threshold = role_cfg["threshold"]
+    allowed_keyids = set(role_cfg["keyids"])
+
+    # print(f"\n\n [{role}]   threshold:  {threshold}")
+    # print(f"\n\n [{role}]   allowed_key:  {allowed_keyids}")
+    # canonical JSON 직렬화
+    signed_bytes = json.dumps(
+        signed,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+    ok_count = 0
+
+    for sig_info in signatures:
+        keyid = sig_info.get("keyid")
+        sig_hex = sig_info.get("sig")
+
+        # print(f"{role} can verify with:     {keyid}")
+
+        # 이 role에서 허용한 key가 아니면 스킵
+        if keyid not in allowed_keyids:
             continue
 
-        if not verifySignature(pem_path, signature, verify_content):
-            print(f"Fail to verify : {vk_hash}")
-        else:
-            print(f"Success Verification: {vk_hash}")
-            verifyCnt += 1
+        key_entry = keydb["keys"].get(keyid)
+        if not key_entry:
+            # root에는 있는데 keydb에 없으면 설정 오류
+            continue
 
-            if verifyCnt == threshold:
+        # print(f"\n{role} has a key entry:     {key_entry}")
+        pub, keytype = _load_public_key_from_entry(key_entry)
+
+        try:
+            sig_bytes = bytes.fromhex(sig_hex)
+        except ValueError:
+            raise ValueError(f"signature for keyid={keyid} is not valid hex")
+
+        try:
+            if keytype == "rsa":
+                pub.verify(
+                    sig_bytes,
+                    signed_bytes,
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.MAX_LENGTH,
+                    ),
+                    hashes.SHA256(),
+                )
+            elif keytype == "ed25519":
+                pub.verify(sig_bytes, signed_bytes)
+            else:
+                raise ValueError(f"unsupported keytype: {keytype}")
+
+            ok_count += 1
+            if ok_count >= threshold:
                 break
 
-    if verifyCnt >= threshold:
-        print("Success the Multi-Signature Verification")
-    else:
-        print("Fail the Multi-Signature Verification")
+        except InvalidSignature as e:
+            # 이 keyid 서명은 실패 → 다른 keyid 계속 시도
+            print(f"[verify_multi_signature] signature FAIL for {keyid}: {e}")
+            continue
 
-if __name__ == '__main__':
-    generate_root(2, 2)
-    key_info = read_root("./root.json")
-    print(key_info)
-    verify_multi_signature("./root.json", key_info)
-
-    generate_vvm()
+    if ok_count < threshold:
+        raise RuntimeError(
+            f"multi-signature verification failed for role '{role}': "
+            f"need {threshold}, got {ok_count}"
+        )

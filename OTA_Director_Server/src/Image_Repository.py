@@ -6,6 +6,7 @@ import hashlib
 import ssl
 import threading
 import requests
+from datetime import datetime, timezone
 
 from flask import Flask, request, send_from_directory
 from watchdog.observers import Observer
@@ -17,14 +18,12 @@ from utils.json_handler import JsonHandler
 from src.utils.signature.pub_signature import make_payload_with_signatures
 from utils.signature.sub_signature import verify_multi_signature
 
-# IP/호스트 지정 : Flask 서버 (Line 23), MQTT 브로커 (Line 237)
 
 class FlaskServer:
     def __init__(self, host="10.222.88.12", port=8443,
                  cert="./utils/certs/https_server.crt",
                  key="./utils/certs/https_server.key",
                  upload_folder="./uploads"):
-        
         os.makedirs(upload_folder, exist_ok=True)
         self.app = Flask(__name__)
         self.host = host
@@ -41,12 +40,13 @@ class FlaskServer:
                 file = request.files['file']
                 filepath = os.path.join(self.upload_folder, file.filename)
                 file.save(filepath)
-                print(f"[Flask] ✅ File saved at: {filepath} ({os.path.getsize(filepath)} bytes)\n")
+                print(f"[Flask] ✅ File saved at: {filepath} ({os.path.getsize(filepath)} bytes)")
                 
                 return {"url": f"https://{self.host}:{self.port}/download/{file.filename}"}, 200
             
             except Exception as e:
                 print(f"[Error] Upload failed: {e}")
+                
                 return {"error": "upload failed"}, 500
 
         @self.app.route('/download/<filename>', methods=['GET'])
@@ -54,11 +54,10 @@ class FlaskServer:
             return send_from_directory(self.upload_folder, filename, as_attachment=True)
 
     def run(self):
-        context = (self.cert, self.key)
         threading.Thread(
             target=self.app.run,
             kwargs={"host": self.host, "port": self.port,
-                    "ssl_context": context, "threaded": True},
+                    "ssl_context": (self.cert, self.key), "threaded": True},
             daemon=True
         ).start()
 
@@ -80,13 +79,11 @@ class FileHandler:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         configure_tls(self.client, self.ca_cert, self.client_cert, self.client_key)
 
-        # MQTT callbacks
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
 
-        # File watching
         self.observer = Observer()
-        self.event_handler = FileChangeHandler(self.client, self.WATCH_DIR)
+        self.event_handler = FileChangeHandler(self.client, self.WATCH_DIR, self.files_path)
         self.observer.schedule(self.event_handler, self.WATCH_DIR, recursive=False)
 
         self.json_handler = JsonHandler()
@@ -94,12 +91,11 @@ class FileHandler:
     def connect_mqtt(self):
         try:
             self.client.connect(self.MQTT_BROKER, self.MQTT_PORT, 60)
-        
         except Exception as e:
             print(f"[Error] MQTT connection failed: {e}")
 
     def start_watching(self):
-        print(f"[Watcher] Watching directory: {self.WATCH_DIR}\n")
+        print(f"[Watcher] Watching directory: {self.WATCH_DIR}")
         self.observer.start()
 
     def stop_watching(self):
@@ -111,20 +107,6 @@ class FileHandler:
     def on_connect(self, client, userdata, flags, rc, properties=None):
         print(f"[MQTT] Connected: {rc}")
         client.subscribe(self.MQTT_REQUEST_TOPIC)
-        try:
-            session = getattr(client._sock, "session", None)
-            
-            if session and hasattr(session, "id"):
-                session_id = session.id
-                session_hash = hashlib.sha256(session_id).hexdigest()
-                
-                print(
-                    f"[MQTT] 🔐 TLS Session ID: {session_id.hex()}\n"
-                    f"[MQTT] Hash: {session_hash}\n"
-                )
-        
-        except Exception as e:
-            print(f"[Error] Failed to retrieve TLS Session ID: {e}")
 
     def on_message(self, client, userdata, msg):
         try:
@@ -133,47 +115,40 @@ class FileHandler:
             with open(temp_json_path, "w", encoding="utf-8") as f:
                 json.dump(payload_data, f, indent=2)
 
-            # 저장한 JSON 파일의 다중 서명 검증 수행
             if verify_multi_signature(temp_json_path):
                 print("[MQTT] ✅ Multi-signature verification passed")
 
                 if msg.topic == self.MQTT_REQUEST_TOPIC:
-                    print("[MQTT] Meta Data request received from Primary ECU\n")
-                    
-                    # 전송할 대상 이미지 메타 데이터 파일 경로 지정
+                    print("[MQTT] Meta Data request received from Primary ECU")
+
                     target_path = "./data/target_image.json"
+                    # 추후 동일한 경로/파일명으로 맞춰야 함
+                    
                     if not os.path.exists(target_path):
                         print("[Error] target_image.json not found")
                         return
-                    
-                    # target_image.json 파일 읽기
+
                     with open(target_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
 
                     upload_url = f"https://{self.MQTT_BROKER}:8443/upload"
+                    with open(self.files_path, 'rb') as f:
+                        files = {'file': ('update_image.tar.xz', f)}
+                        res = requests.post(upload_url, files=files, verify="./utils/certs/https_server.crt")
+                    
+                    if res.status_code != 200:
+                        print(f"[Error] File upload failed (HTTP {res.status_code})")
+                        return
 
-                    try:    # 서버
-                        with open(self.files_path, 'rb') as f:
-                            files = {'file': ('update_image.tar.xz', f)}
-                            res = requests.post(upload_url, files=files, verify="./utils/certs/https_server.crt")
-                        
-                        if res.status_code != 200:
-                            print(f"[Error] File upload failed (HTTP {res.status_code})")
-                            return
+                    download_url = res.json().get('url')
+                    if not download_url:
+                        print("[Error] No URL in server response")
+                        return
 
-                        download_url = res.json().get('url')
-                        if not download_url:
-                            print("[Error] No URL in server response")
-                            return
-
-                        print(f"[MQTT] 📡 Upload complete, download URL: {download_url}\n")
-                        data["url"] = download_url
-
-                        meta_payload = make_payload_with_signatures(data)
-                        client.publish(self.MQTT_META_TOPIC, meta_payload, qos=2)
-
-                    except Exception as e:
-                        print(f"[Error] Exception occurred during upload: {e}")
+                    data["url"] = download_url
+                    meta_payload = make_payload_with_signatures(data)
+                    client.publish(self.MQTT_META_TOPIC, meta_payload, qos=2)
+                    print(f"[MQTT] 📡 Upload complete, download URL: {download_url}")
 
             else:
                 print("[MQTT] ❌ Multi-signature verification failed")
@@ -183,80 +158,72 @@ class FileHandler:
 
 
 class FileChangeHandler(FileSystemEventHandler):
-    def __init__(self, client, watch_dir):
+    def __init__(self, client, watch_dir, files_path):
         self.client = client
         self.watch_dir = watch_dir
+        self.files_path = files_path
         self.json_handler = JsonHandler()
+        self.signing_key_path = "./utils/signature/image_private.pem"
 
     def on_created(self, event):
         if event.is_directory:
             TARGET_PATH = "../data/target_new.json"
+            # 추후 target_new.json / target_image.json 경로 및 이름을 통일
             
             if not os.path.exists(TARGET_PATH):
                 print("[Error] target_new.json not found")
                 return
-            
+
             with open(TARGET_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            
+
             targets = {}
+            sk = SigningKey.from_pem(open(self.signing_key_path).read())
+
             for folder_name, files in data.items():
                 if folder_name == "version":
                     continue
                 folder_path = os.path.join(self.watch_dir, folder_name)
-                
+
                 for file_name, file_info in files.items():
-                    relative_path = file_info.get("path")
-                    full_path = os.path.join(folder_path, relative_path)
-                    
+                    rel_path = file_info.get("path")
+                    full_path = os.path.join(folder_path, rel_path)
                     if not os.path.exists(full_path):
                         print(f"[Watcher] File not found: {full_path}")
                         continue
-                    
-                    try:
-                        with open(full_path, "rb") as f:
-                            content = f.read()
-                        file_hash = hashlib.sha256(content).digest()
-                        file_info["sha256"] = base64.b64encode(file_hash).decode('utf-8')
 
-                        sk = SigningKey.from_pem(open("./utils/signature/image_private.pem").read())
-                        signature = sk.sign(file_hash)
-                        file_info["signature"] = base64.b64encode(signature).decode('utf-8')
+                    with open(full_path, "rb") as f:
+                        content = f.read()
+                    sha256_digest = hashlib.sha256(content).digest()
+                    file_info["sha256"] = base64.b64encode(sha256_digest).decode('utf-8')
+                    file_info["signature"] = base64.b64encode(sk.sign(sha256_digest)).decode('utf-8')
 
-                        print(f"[Watcher] Signature created: {file_name}")
+                    targets[file_name] = {
+                        "hashes": {"sha256": hashlib.sha256(content).hexdigest()},
+                        "length": len(content)
+                    }
 
-                        targets[file_name] = {
-                            "hashes": {
-                                "sha256": hashlib.sha256(content).hexdigest(),
-                            },
-                            "length": len(content)
-                        }
+            output = {
+                "signed": {
+                    "_type": "targets",
+                    "spec_version": "1.0.0",
+                    "version": 1,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "expires": "2030-01-01T00:00:00Z",
+                    "targets": targets
+                },
+                "signatures": []
+            }
 
-                    except Exception as e:
-                        print(f"[Error] Failed to process {file_name}: {e}")
+            os.makedirs("./data", exist_ok=True)
+            target_json_path = "./data/target_image.json"
+            with open(target_json_path, "w", encoding="utf-8") as f:
+                json.dump(output, f, indent=4, ensure_ascii=False)
+            print(f"[Watcher] ✅ target_image.json created with timestamp")
 
-            try:
-                output = {
-                    "signed": {
-                        "_type": "targets",
-                        "spec_version": "1.0.0",
-                        "version": 1,
-                        "expires": "2030-01-01T00:00:00Z",
-                        "targets": targets
-                    },
-                    "signatures": []
-                }
-
-                with open("./data/target_image.json", "w", encoding="utf-8") as f:
-                    json.dump(output, f, indent=4, ensure_ascii=False)
-                print("[Watcher] Success: target_image.json created in Director format\n")
-
-                output_tar_path = "./data/update_image.tar.xz"
-                self.json_handler.create_new_update_tarball("./data/target_image.json", self.watch_dir, output_tar_path)
-                print(f"[Watcher] Tarball created: {output_tar_path}\n")
-
-            except Exception as e:
-                print(f"[Error] Tarball creation failed: {e}\n")
+            output_tar_path = "./data/update_image.tar.xz"
+            self.json_handler.create_new_update_tarball(target_json_path, self.watch_dir, output_tar_path)
+            print(f"[Watcher] 🗜️ Tarball created: {output_tar_path}")
 
 
 def configure_tls(client, ca_cert, client_cert, client_key):
@@ -277,6 +244,7 @@ if __name__ == "__main__":
     MQTT_PORT = 8883
     WATCH_DIR = "../Image_Repo"
     files_path = "./data/update_image.tar.xz"
+    # update_image.tar.xz 경로도 통일 필요
 
     file_handler = FileHandler(MQTT_BROKER, MQTT_PORT, WATCH_DIR, files_path)
     file_handler.connect_mqtt()
@@ -288,8 +256,8 @@ if __name__ == "__main__":
             time.sleep(1)
     
     except KeyboardInterrupt:
-        print("[Watcher] Shutting down...\n")
+        print("[Watcher] Shutting down...")
+        
         file_handler.stop_watching()
         file_handler.client.loop_stop()
-    
-    file_handler.observer.join()
+        file_handler.observer.join()

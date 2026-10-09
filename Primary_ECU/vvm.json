@@ -1,0 +1,42 @@
+{
+  "signatures": [
+    {
+      "keyid": "143a1d7d0d9a07155083f0fa3085035154c96044ea723896d7c6b8cba6b26fa2",
+      "sig": "7dJ2qjsbJ+mCx+b/bZB0XN1ylfhzIIlNrlWLOVQLxGk0bgUanvPsvJtmIMIhn2E/odxxNJ5ztcn/4RxPwBTwCw=="
+    }
+  ],
+  "signed": {
+    "vin": "VIN-TEST-0001",
+    "primary_ecu_serial": "primary0",
+    "expires": "2026-11-30T15:20:46Z",
+    "ecu_version": [
+      {
+        "ecu_serial": "ivi",
+        "target_image": {
+          "filename": "ivi_0.0.0.bin",
+          "fileinfo": {
+            "hashes": {
+              "sha256": "5a63fcc26b617412ce109df503c95c448cb852a74dafb3c536a6b5899244c18b",
+              "sha512": "f4cd9f19f219357fe802221ad96e2c0c9f4483ca26a311b41d4e944d1152f2a87cb2d84f6627c4cfe52aefe329ce6adcb1dce6c2ddf7e0fb6e1271ef11de15f4"
+            },
+            "length": 10
+          }
+        }
+      },
+      {
+        "ecu_serial": "cluster",
+        "target_image": {
+          "filename": "cluster_1.0.0.bin",
+          "fileinfo": {
+            "hashes": {
+              "sha256": "45a1ba4695313ceebcc8f2c9dc32c0015bf1925e87090053e93768f3e09e96dd",
+              "sha512": "e1eab9d8f5f96de8af5151835f5b98ce5bf0c8da16882019c0614665c69b290f226793f2ab38fc3cfebf25185215b6bc190d06189de47a0263ee34252a83c7ab"
+            },
+            "length": 14
+          }
+        }
+      }
+    ],
+    "keyid": "143a1d7d0d9a07155083f0fa3085035154c96044ea723896d7c6b8cba6b26fa2"
+  }
+}

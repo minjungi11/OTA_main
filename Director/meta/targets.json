@@ -1,0 +1,50 @@
+{
+  "signatures": [
+    {
+      "keyid": "507b54e2b4b3606dd011a9455f9fbc043b8cb71d9601e9b8d449aafab48bf10d",
+      "sig": "5acca6d41571b6078a9a196194c22232b89622af1eb773fce68bc151de8d241ff2e09d2b58469fd865d116d3d3e9fd307f0e2a078fe03410f0b59a7d347fc60d"
+    }
+  ],
+  "signed": {
+    "_type": "targets",
+    "spec_version": "1.0.0",
+    "version": 22,
+    "expires": "2026-12-01T08:26:39Z",
+    "targets": {
+      "ivi_2.0.0": {
+        "hashes": {
+          "sha256": "5b357d7f26afcee2ea354cdd8f813cd86f0291fa5e75f54db9f78c583235f6f7",
+          "sha512": "c026f0cd88496c7d3989fb78d7af0a4b01690d795da8c8609568547f7f2824e1db98e45ac2e356219378e96ed1aaf421299a1d0c1f4c91373b13383374febcf1"
+        },
+        "length": 501955584
+      }
+    },
+    "delegations": {
+      "keys": {
+        "f446fb01473aa70d7fbe1a954da9fe412b73bd792f8ce478eb9ec3acbe7f529c": {
+          "keytype": "ed25519",
+          "scheme": "ed25519",
+          "keyid_hash_algorithms": [
+            "sha256"
+          ],
+          "keyval": {
+            "public": "46c9ebaabb47c7562f9d905386bbb756f4a6e0dc6ffb82e40bc19fa77e4e76d9"
+          }
+        }
+      },
+      "roles": [
+        {
+          "name": "ivi",
+          "keyids": [
+            "f446fb01473aa70d7fbe1a954da9fe412b73bd792f8ce478eb9ec3acbe7f529c"
+          ],
+          "paths": [
+            "ivi/*"
+          ],
+          "terminating": false,
+          "threshold": 1
+        }
+      ]
+    }
+  }
+}
